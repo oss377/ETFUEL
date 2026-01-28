@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1026627253984",
+    "project_id": "gold-57e14",
+    "storage_bucket": "gold-57e14.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1026627253984:android:0d5d1926dddc909642c285",
+        "android_client_info": {
+          "package_name": "com.aweke.gasstation"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC8HWBuiKGJE9eM5hLPf82uB1g5FDlQb3E"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
