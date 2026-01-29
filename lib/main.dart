@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -10,7 +12,7 @@ import 'screens/station_registration_screen.dart';
 import 'screens/vehicle_registration_screen.dart';
 import 'screens/station_owner.dart';
 import 'screens/car_owner.dart';
-import 'screens/home_page.dart'; // Add this import for station home
+import 'screens/home_page.dart';
 import 'firebase_options.dart';
 
 void main() async {
@@ -72,43 +74,77 @@ class _AuthWrapperState extends State<AuthWrapper> {
   AppState _appState = AppState.splash;
   String _userName = '';
   String _userRole = '';
+  String _userId = '';
   int _landingTabIndex = 0;
+
+  // Add auth state listener
+  StreamSubscription<User?>? _authSubscription;
 
   @override
   void initState() {
     super.initState();
+    _initializeAuthState();
+  }
+
+  @override
+  void dispose() {
+    // Clean up the listener
+    _authSubscription?.cancel();
+    super.dispose();
+  }
+
+  void _initializeAuthState() {
+    // Set up auth state listener for real-time changes
+    _authSubscription = _auth.authStateChanges().listen((User? user) {
+      if (user == null) {
+        // User signed out or session expired
+        print('User session ended or expired');
+        if (_appState != AppState.login && _appState != AppState.splash) {
+          _navigateToLogin();
+        }
+      } else {
+        // User signed in or session restored
+        print('User session active: ${user.uid}');
+        if (_appState == AppState.login || _appState == AppState.splash) {
+          // If we're on login/splash and user logs in elsewhere, fetch role
+          _fetchUserRole(user.uid);
+        }
+      }
+    });
+
+    // Initial check
     _checkAuthState();
   }
 
   Future<void> _checkAuthState() async {
     try {
-      // Start with splash screen
+      // Start with splash screen for 1.5 seconds
       await Future.delayed(const Duration(milliseconds: 1500));
       
-      // Check if user is already logged in
+      // Check if user is already logged in from local storage
       final user = _auth.currentUser;
       
-      if (user != null) {
-        // User is logged in, get their role
+      if (user != null && user.uid.isNotEmpty) {
+        print('✅ Session found in local storage for user: ${user.uid}');
+        // User has active session, fetch their role and navigate to appropriate page
         await _fetchUserRole(user.uid);
       } else {
-        // No user logged in, go to splash then landing
-        setState(() {
-          _isLoading = false;
-          _appState = AppState.splash;
-        });
+        print('❌ No active session found in local storage');
+        // No session found, navigate directly to login
+        _navigateToLogin();
       }
     } catch (e) {
       print('Error checking auth state: $e');
-      setState(() {
-        _isLoading = false;
-        _appState = AppState.splash;
-      });
+      _navigateToLogin();
     }
   }
 
   Future<void> _fetchUserRole(String userId) async {
     try {
+      setState(() {
+        _isLoading = true;
+      });
+
       final doc = await _firestore.collection('users').doc(userId).get();
       
       if (doc.exists) {
@@ -120,64 +156,94 @@ class _AuthWrapperState extends State<AuthWrapper> {
           _isLoading = false;
           _userName = fullName;
           _userRole = role;
+          _userId = userId;
           
           // Navigate based on role
           if (role == 'driver') {
-            _appState = AppState.landing; // Driver goes to LandingScreen
+            _appState = AppState.landing;
+            print('🚗 Navigating to Landing (Driver)');
           } else if (role == 'station') {
-            _appState = AppState.stationHomePage; // Station goes to HomePage
+            _appState = AppState.stationHomePage;
+            print('⛽ Navigating to Station Home Page');
           } else {
-            // Unknown role, go to login
-            _appState = AppState.login;
+            // Unknown role, sign out and go to login
+            print('⚠️ Unknown role: $role, signing out');
+            _performLogout();
           }
         });
       } else {
-        // User document doesn't exist, go to login
-        await _auth.signOut();
-        setState(() {
-          _isLoading = false;
-          _appState = AppState.login;
-        });
+        // User document doesn't exist in Firestore
+        print('❌ User document not found in Firestore');
+        await _performLogout();
       }
     } catch (e) {
       print('Error fetching user role: $e');
-      setState(() {
-        _isLoading = false;
-        _appState = AppState.login;
-      });
+      await _performLogout();
     }
   }
 
-  void _handleSplashComplete() {
+  void _navigateToLogin() {
     setState(() {
-      _appState = AppState.landing;
+      _isLoading = false;
+      _appState = AppState.login;
+      print('🔐 Navigating to Login');
     });
   }
 
+  void _handleSplashComplete() {
+    // After splash, check if we have a session
+    if (_auth.currentUser != null) {
+      // If user exists, we should already be in a different state
+      // This is just a fallback
+      _checkAuthState();
+    } else {
+      _navigateToLogin();
+    }
+  }
+
   void _handleLoginSuccess() {
-    // After login, check auth state again to get user role
+    // After successful login, check auth state again
+    setState(() {
+      _isLoading = true;
+    });
     _checkAuthState();
   }
 
   void _handleLogout() async {
-    await _auth.signOut();
-    setState(() {
-      _userName = '';
-      _userRole = '';
-      _appState = AppState.landing;
-    });
+    await _performLogout();
   }
 
-  void _handleBackToLogin() {
-    setState(() {
-      _appState = AppState.login;
-    });
+  Future<void> _performLogout() async {
+    try {
+      // Clear all local data and session
+      await _auth.signOut();
+      
+      // Clear local state
+      setState(() {
+        _userName = '';
+        _userRole = '';
+        _userId = '';
+        _isLoading = false;
+        _appState = AppState.login;
+      });
+      
+      print('✅ Logout successful, session cleared');
+    } catch (e) {
+      print('❌ Error during logout: $e');
+      // Still navigate to login even if logout fails
+      _navigateToLogin();
+    }
   }
+
 
   void _handleGoToLanding() {
-    setState(() {
-      _appState = AppState.landing;
-    });
+    if (_auth.currentUser != null && _userRole == 'driver') {
+      setState(() {
+        _appState = AppState.landing;
+      });
+    } else {
+      _navigateToLogin();
+    }
   }
 
   void _handleRegisterVehicle() {
@@ -220,12 +286,24 @@ class _AuthWrapperState extends State<AuthWrapper> {
               const CircularProgressIndicator(color: Color(0xFF256af4)),
               const SizedBox(height: 20),
               Text(
-                'Checking Authentication...',
+                _auth.currentUser != null 
+                  ? 'Restoring your session...' 
+                  : 'Checking Authentication...',
                 style: GoogleFonts.spaceGrotesk(
                   color: Colors.white,
                   fontSize: 16,
                 ),
               ),
+              if (_auth.currentUser != null) ...[
+                const SizedBox(height: 10),
+                Text(
+                  'Welcome back!',
+                  style: GoogleFonts.spaceGrotesk(
+                    color: const Color(0xFF256af4),
+                    fontSize: 14,
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -243,9 +321,14 @@ class _AuthWrapperState extends State<AuthWrapper> {
       case AppState.landing:
         return LandingScreen(
           onLogin: () {
-            setState(() {
-              _appState = AppState.login;
-            });
+            // This shouldn't happen if user is logged in, but handle gracefully
+            if (_auth.currentUser == null) {
+              _navigateToLogin();
+            } else {
+              setState(() {
+                _appState = AppState.login;
+              });
+            }
           },
           onLogout: _handleLogout,
           onRegisterVehicle: _handleRegisterVehicle,
@@ -255,12 +338,21 @@ class _AuthWrapperState extends State<AuthWrapper> {
           onRegisterAsDriver: _handleRegisterVehicle,
           onRegisterAsStationOwner: _handleRegisterStation,
           onRegisterStation: _handleRegisterStation,
+          userName: _userName, // Pass user name to landing screen
+          userRole: _userRole, // Pass user role to landing screen
         );
 
       case AppState.login:
         return LoginScreen(
           onLoginSuccess: _handleLoginSuccess,
-          onBackPressed: _handleGoToLanding,
+          onBackPressed: () {
+            // If user came from somewhere and wants to go back
+            if (_auth.currentUser != null) {
+              _checkAuthState();
+            } else {
+              _navigateToLogin();
+            }
+          },
           onRegisterAsDriver: _handleRegisterVehicle,
           onRegisterAsStationOwner: _handleRegisterStation,
         );
@@ -295,13 +387,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
           onLogout: _handleLogout,
         );
 
-      default:
-        return SplashScreen(
-          autoNavigate: true,
-          autoNavigateDuration: const Duration(seconds: 2),
-          onGetStarted: _handleSplashComplete,
-        );
-    }
+      }
   }
 
   @override
@@ -322,7 +408,7 @@ enum AppState {
   login,
   carOwnerHome,
   stationOwnerDashboard,
-  stationHomePage, // Added this for station home
+  stationHomePage,
   vehicleRegistration,
   stationRegistration,
 }

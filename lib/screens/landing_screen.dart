@@ -28,7 +28,7 @@ class LandingScreen extends StatefulWidget {
     this.onLogin,
     this.onRegisterAsDriver,
     this.onRegisterAsStationOwner, required void Function() onRegisterStation,
-    this.userName,
+    this.userName, required String userRole,
   });
 
   @override
@@ -94,9 +94,11 @@ class _LandingScreenState extends State<LandingScreen> {
               backgroundColor: Colors.transparent,
               elevation: 0,
               flexibleSpace: GlassNavBar(
-                onLogin: widget.onLogin,
-                onRegisterAsDriver: widget.onRegisterAsDriver,
-                onRegisterAsStationOwner: widget.onRegisterAsStationOwner,
+                onLogout: widget.onLogout ?? () {},
+                onNotificationsPressed: widget.onNavigate != null
+                    ? () => widget.onNavigate!('notifications')
+                    : null,
+                onProfilePressed: () => widget.onTabChanged?.call(3),
               ),
             ),
 

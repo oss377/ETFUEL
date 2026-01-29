@@ -59,7 +59,8 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
               child: TopNavBar(
-           
+                   userName: widget.userName,
+                   onLogout: widget.onLogout,
               ),
             ),
           ),
